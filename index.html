@@ -35,7 +35,7 @@
     padding:28px 16px 60px;
   }
   .sheet{
-    max-width:720px;
+    max-width:880px;
     margin:0 auto;
     background:var(--paper);
     border:1px solid var(--line);
@@ -187,23 +187,58 @@
   .brief.img-task svg{ width:100%; border:1px solid var(--line); background:#fff; }
   .brief.img-task .img-text{ flex:1; min-width:200px; }
 
+  .exam-top{
+    display:flex; gap:20px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .avatar-col{
+    flex:0 0 132px;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  .avatar{
+    width:108px; height:108px;
+    transition:filter .2s;
+  }
+  .avatar svg{ width:100%; height:100%; display:block; }
+  .avatar-mouth{ transform-box:fill-box; transform-origin:center; }
+  .avatar.speaking .avatar-mouth{ animation:mouthTalk 0.28s ease-in-out infinite; }
+  .avatar.listening{ filter:drop-shadow(0 0 0 var(--stamp-red)); }
+  .avatar.listening .avatar-ring{ stroke:var(--stamp-red); animation:ringPulse 1.2s infinite; }
+  @keyframes mouthTalk{
+    0%, 100%{ transform:scaleY(0.45); }
+    50%{ transform:scaleY(2); }
+  }
+  @keyframes ringPulse{
+    0%{ opacity:0.9; }
+    50%{ opacity:0.3; }
+    100%{ opacity:0.9; }
+  }
+  .avatar-label{
+    font-family:var(--mono); font-size:10px; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--ink-soft); text-align:center;
+  }
+  .exam-top .brief{ flex:1; min-width:240px; margin-bottom:0; }
+  @media (max-width:420px){
+    .exam-top{ flex-direction:column; align-items:center; }
+    .avatar-col{ flex-direction:row; }
+  }
+
   .transcript{
     border:1px solid var(--line);
     background:rgba(255,255,255,0.55);
-    min-height:260px;
-    max-height:420px;
+    min-height:420px;
+    max-height:min(640px, 62vh);
     overflow-y:auto;
-    padding:18px;
+    padding:24px 26px;
     margin-bottom:16px;
   }
-  .bubble{ margin-bottom:16px; display:flex; gap:10px; }
+  .bubble{ margin-bottom:20px; display:flex; gap:14px; }
   .bubble .who{
-    flex:0 0 64px;
-    font-family:var(--mono); font-size:10.5px; text-transform:uppercase;
-    letter-spacing:0.06em; color:var(--ink-soft); padding-top:3px;
+    flex:0 0 72px;
+    font-family:var(--mono); font-size:11px; text-transform:uppercase;
+    letter-spacing:0.06em; color:var(--ink-soft); padding-top:4px;
   }
   .bubble.partner .who{ color:var(--stamp-red-deep); }
-  .bubble .txt{ font-size:15px; line-height:1.55; flex:1; }
+  .bubble .txt{ font-size:16.5px; line-height:1.65; flex:1; }
   .bubble.interim .txt{ color:var(--ink-soft); font-style:italic; }
 
   .mic-row{
@@ -379,7 +414,26 @@
       <div class="timer" id="timer">15:00</div>
     </div>
 
-    <div class="brief" id="brief"></div>
+    <div class="exam-top">
+      <div class="avatar-col">
+        <div class="avatar" id="avatar">
+          <svg viewBox="0 0 160 160">
+            <circle class="avatar-ring" cx="80" cy="80" r="76" fill="none" stroke="var(--line)" stroke-width="2"/>
+            <path d="M30 168 Q80 122 130 168 L130 178 L30 178 Z" fill="var(--ink)"/>
+            <ellipse cx="80" cy="74" rx="36" ry="42" fill="#E2D6B8" stroke="var(--ink)" stroke-width="1.5"/>
+            <path d="M40 62 Q80 24 120 62 Q120 46 80 38 Q40 46 40 62 Z" fill="var(--ink)"/>
+            <path d="M56 62 Q63 57 70 62" stroke="var(--ink)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            <path d="M90 62 Q97 57 104 62" stroke="var(--ink)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            <circle cx="65" cy="71" r="3.4" fill="var(--ink)"/>
+            <circle cx="95" cy="71" r="3.4" fill="var(--ink)"/>
+            <path d="M80 74 L77 90 Q80 93 83 90" stroke="var(--ink)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+            <ellipse class="avatar-mouth" cx="80" cy="103" rx="13" ry="3" fill="var(--stamp-red-deep)"/>
+          </svg>
+        </div>
+        <div class="avatar-label">Gesprächspartner</div>
+      </div>
+      <div class="brief" id="brief"></div>
+    </div>
 
     <div class="transcript" id="transcript"></div>
 
@@ -505,6 +559,7 @@ let awaitingResponse = false;
 // ---------------- DOM refs ----------------
 const screenSetup = document.getElementById('screen-setup');
 const screenExam = document.getElementById('screen-exam');
+const avatarEl = document.getElementById('avatar');
 const screenFeedback = document.getElementById('screen-feedback');
 const taskGrid = document.getElementById('task-grid');
 const topicSelect = document.getElementById('topic-select');
@@ -657,6 +712,7 @@ function setupRecognition(){
   recognition.onstart = () => {
     isListening = true;
     micBtn.classList.add('listening');
+    avatarEl.classList.add('listening');
     micHint.textContent = 'Ich höre zu … Tippe „Fertig & senden“, wenn du fertig bist.';
     btnStopSend.style.display = 'inline-block';
   };
@@ -675,6 +731,7 @@ function setupRecognition(){
   recognition.onerror = (event) => {
     isListening = false;
     micBtn.classList.remove('listening');
+    avatarEl.classList.remove('listening');
     btnStopSend.style.display = 'none';
     if(event.error === 'no-speech'){
       micHint.textContent = 'Nichts gehört. Versuch es noch einmal.';
@@ -689,6 +746,7 @@ function setupRecognition(){
   recognition.onend = () => {
     isListening = false;
     micBtn.classList.remove('listening');
+    avatarEl.classList.remove('listening');
     btnStopSend.style.display = 'none';
     removeInterimBubble();
     if(finalText && finalText.trim().length > 0){
@@ -1120,13 +1178,18 @@ function speakText(text){
   utter.lang = 'de-DE';
   if(chosenVoice) utter.voice = chosenVoice;
   utter.rate = 0.98;
+  utter.onstart = () => {
+    avatarEl.classList.add('speaking');
+  };
   utter.onend = () => {
+    avatarEl.classList.remove('speaking');
     awaitingResponse = false;
     micBtn.classList.remove('thinking');
     micBtn.disabled = secondsLeft <= 0;
     micHint.textContent = 'Tippe das Mikrofon an, um zu antworten.';
   };
   utter.onerror = () => {
+    avatarEl.classList.remove('speaking');
     awaitingResponse = false;
     micBtn.classList.remove('thinking');
     micBtn.disabled = secondsLeft <= 0;
