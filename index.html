@@ -345,11 +345,30 @@
       <div class="kicker">Persönliches Übungstool · keine offizielle ÖSD-Software</div>
       <h1>Sprechen — ÖSD B2</h1>
     </div>
+    <button class="btn ghost" id="btn-logout" style="display:none;align-self:flex-start;font-size:11px;padding:8px 14px;">Abmelden</button>
     <div class="seal">ÖSD<br>B2<br>ÜBUNG</div>
   </header>
 
+  <!-- ===================== AUTH SCREEN ===================== -->
+  <div id="screen-auth" class="screen">
+    <p class="lead">Dieses Übungstool ist persönlich geschützt. Melde dich mit deinem Konto an, oder erstelle ein neues.</p>
+    <div class="field">
+      <label for="auth-username">Benutzername</label>
+      <input type="text" id="auth-username" placeholder="z. B. raha" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="auth-password">Passwort</label>
+      <input type="password" id="auth-password" placeholder="mind. 6 Zeichen" autocomplete="current-password">
+    </div>
+    <div class="btn-row">
+      <button class="btn red" id="btn-login">Anmelden</button>
+      <button class="btn ghost" id="btn-register">Neues Konto erstellen</button>
+    </div>
+    <p class="small-note" id="auth-note"></p>
+  </div>
+
   <!-- ===================== SETUP SCREEN ===================== -->
-  <div id="screen-setup" class="screen">
+  <div id="screen-setup" class="screen hidden">
     <p class="lead">Wähle eine Aufgabe aus der mündlichen B2-Prüfung. Dein Gesprächspartner spricht mit dir — du antwortest mit deiner Stimme, ganz wie in der echten Prüfung.</p>
     <p class="small-note" id="install-hint" style="display:none;">📱 Tipp: Tippe in Safari unten auf <strong>Teilen</strong> → <strong>Zum Home-Bildschirm</strong>, um diese Seite wie eine echte App auf deinem iPhone zu installieren.</p>
 
@@ -474,6 +493,101 @@
   <footer class="foot">SPRACHTRAINING · NUR ZUR PERSÖNLICHEN VORBEREITUNG</footer>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+<script>
+/* ============================================================
+   ANMELDUNG / KONTEN (Firebase Authentication)
+   WICHTIG: Trage hier deine eigene Firebase-Projekt-Konfiguration ein.
+   Anleitung dazu hat dir Claude im Chat gegeben.
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCqLiPF-AQMqeuQtTqVXWCTuwWTVVw4AUg",
+  authDomain: "osdprufung10.firebaseapp.com",
+  projectId: "osdprufung10",
+  appId: "1:301007152135:web:7fd3d90b0d2286d89d36a2"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
+function usernameToEmail(username){
+  const clean = username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+  return clean + '@osd-trainer.local';
+}
+
+function authErrorMessage(e){
+  const map = {
+    'auth/email-already-in-use': 'Dieser Benutzername ist bereits vergeben.',
+    'auth/weak-password': 'Passwort zu schwach (mindestens 6 Zeichen).',
+    'auth/invalid-email': 'Ungültiger Benutzername (nur Buchstaben, Zahlen, _ . -).',
+    'auth/missing-password': 'Bitte ein Passwort eingeben.',
+    'auth/user-not-found': 'Diesen Benutzernamen gibt es nicht.',
+    'auth/wrong-password': 'Falsches Passwort.',
+    'auth/invalid-credential': 'Benutzername oder Passwort ist falsch.',
+    'auth/configuration-not-found': 'Anmeldung ist noch nicht eingerichtet (Firebase-Konfiguration fehlt/falsch — siehe Anleitung).',
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase-Konfiguration fehlt noch — bitte firebaseConfig im Code ausfüllen.'
+  };
+  return map[e.code] || ('Fehler: ' + (e.message || e.code || 'unbekannt'));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const screenAuthEl = document.getElementById('screen-auth');
+  const screenSetupEl = document.getElementById('screen-setup');
+  const screenExamEl = document.getElementById('screen-exam');
+  const screenFeedbackEl = document.getElementById('screen-feedback');
+  const authUsername = document.getElementById('auth-username');
+  const authPassword = document.getElementById('auth-password');
+  const authNote = document.getElementById('auth-note');
+  const btnLoginEl = document.getElementById('btn-login');
+  const btnRegisterEl = document.getElementById('btn-register');
+  const btnLogoutEl = document.getElementById('btn-logout');
+
+  async function handleAuthAction(mode){
+    const u = authUsername.value.trim();
+    const p = authPassword.value;
+    if(!u || !p){
+      authNote.style.color = 'var(--stamp-red)';
+      authNote.textContent = 'Bitte Benutzername und Passwort eingeben.';
+      return;
+    }
+    authNote.style.color = '';
+    authNote.textContent = mode === 'register' ? 'Konto wird erstellt …' : 'Anmeldung läuft …';
+    const email = usernameToEmail(u);
+    try{
+      if(mode === 'register'){
+        await auth.createUserWithEmailAndPassword(email, p);
+      } else {
+        await auth.signInWithEmailAndPassword(email, p);
+      }
+    }catch(e){
+      console.error(e);
+      authNote.style.color = 'var(--stamp-red)';
+      authNote.textContent = authErrorMessage(e);
+    }
+  }
+
+  btnLoginEl.addEventListener('click', () => handleAuthAction('login'));
+  btnRegisterEl.addEventListener('click', () => handleAuthAction('register'));
+  btnLogoutEl.addEventListener('click', () => auth.signOut());
+
+  auth.onAuthStateChanged(user => {
+    if(user){
+      screenAuthEl.classList.add('hidden');
+      screenSetupEl.classList.remove('hidden');
+      btnLogoutEl.style.display = 'inline-block';
+      authNote.textContent = '';
+      authUsername.value = '';
+      authPassword.value = '';
+    } else {
+      screenAuthEl.classList.remove('hidden');
+      screenSetupEl.classList.add('hidden');
+      screenExamEl.classList.add('hidden');
+      screenFeedbackEl.classList.add('hidden');
+      btnLogoutEl.style.display = 'none';
+    }
+  });
+});
+</script>
 <script>
 /* ============================================================
    ÖSD B2 SPRECHEN TRAINER
