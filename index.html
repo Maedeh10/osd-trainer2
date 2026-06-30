@@ -364,6 +364,7 @@
       <button class="btn red" id="btn-login">Anmelden</button>
       <button class="btn ghost" id="btn-register">Neues Konto erstellen</button>
     </div>
+    <p class="small-note">Neue Konten müssen vom Administrator freigeschaltet werden, bevor eine Anmeldung möglich ist.</p>
     <p class="small-note" id="auth-note"></p>
   </div>
 
@@ -495,6 +496,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
 <script>
 /* ============================================================
    ANMELDUNG / KONTEN (Firebase Authentication)
@@ -509,6 +511,25 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+const db = firebase.firestore();
+
+function getDeviceSessionId(){
+  let id = localStorage.getItem('osd_device_session_id');
+  if(!id){
+    id = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    localStorage.setItem('osd_device_session_id', id);
+  }
+  return id;
+}
+const deviceSessionId = getDeviceSessionId();
+let sessionWatcherUnsub = null;
+
+// Der Besitzer der App (Admin) ist von Freischaltungspflicht und
+// Ein-Geräte-Beschränkung ausgenommen.
+const ADMIN_USERNAME = 'raha';
+function isAdminUser(user){
+  return !!user && user.email === usernameToEmail(ADMIN_USERNAME);
+}
 
 function usernameToEmail(username){
   const clean = username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
@@ -525,7 +546,9 @@ function authErrorMessage(e){
     'auth/wrong-password': 'Falsches Passwort.',
     'auth/invalid-credential': 'Benutzername oder Passwort ist falsch.',
     'auth/configuration-not-found': 'Anmeldung ist noch nicht eingerichtet (Firebase-Konfiguration fehlt/falsch — siehe Anleitung).',
-    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase-Konfiguration fehlt noch — bitte firebaseConfig im Code ausfüllen.'
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase-Konfiguration fehlt noch — bitte firebaseConfig im Code ausfüllen.',
+    'app/pending-approval': 'Konto erstellt! Es muss zuerst vom Administrator freigeschaltet werden, bevor du dich anmelden kannst.',
+    'app/not-approved': 'Dieses Konto wurde noch nicht freigeschaltet. Bitte wende dich an den Administrator.'
   };
   return map[e.code] || ('Fehler: ' + (e.message || e.code || 'unbekannt'));
 }
@@ -555,9 +578,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const email = usernameToEmail(u);
     try{
       if(mode === 'register'){
-        await auth.createUserWithEmailAndPassword(email, p);
+        const cred = await auth.createUserWithEmailAndPassword(email, p);
+        const isAdmin = isAdminUser(cred.user);
+        await db.collection('users').doc(cred.user.uid).set({
+          username: u,
+          approved: isAdmin ? true : false,
+          activeSession: null,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if(isAdmin){
+          // Admin-Konto: sofort eingeloggt, keine Freischaltung nötig
+          return;
+        }
+        await auth.signOut();
+        authNote.style.color = 'var(--stamp-red)';
+        authNote.textContent = authErrorMessage({code:'app/pending-approval'});
+        authUsername.value = '';
+        authPassword.value = '';
       } else {
-        await auth.signInWithEmailAndPassword(email, p);
+        const cred = await auth.signInWithEmailAndPassword(email, p);
+        if(isAdminUser(cred.user)){
+          // Admin-Konto: keine Freischaltungs- oder Geräteprüfung
+          return;
+        }
+        const doc = await db.collection('users').doc(cred.user.uid).get();
+        if(!doc.exists || doc.data().approved !== true){
+          await auth.signOut();
+          authNote.style.color = 'var(--stamp-red)';
+          authNote.textContent = authErrorMessage({code:'app/not-approved'});
+          return;
+        }
+        // Claim this device as the only active session for this account
+        await db.collection('users').doc(cred.user.uid).update({
+          activeSession: deviceSessionId
+        });
       }
     }catch(e){
       console.error(e);
@@ -568,10 +622,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnLoginEl.addEventListener('click', () => handleAuthAction('login'));
   btnRegisterEl.addEventListener('click', () => handleAuthAction('register'));
-  btnLogoutEl.addEventListener('click', () => auth.signOut());
+  btnLogoutEl.addEventListener('click', async () => {
+    const uid = auth.currentUser && auth.currentUser.uid;
+    if(uid){
+      try{ await db.collection('users').doc(uid).update({ activeSession: null }); }catch(e){}
+    }
+    auth.signOut();
+  });
 
-  auth.onAuthStateChanged(user => {
+  auth.onAuthStateChanged(async user => {
+    if(sessionWatcherUnsub){ sessionWatcherUnsub(); sessionWatcherUnsub = null; }
+
     if(user){
+      const isAdmin = isAdminUser(user);
+      const docRef = db.collection('users').doc(user.uid);
+
+      if(!isAdmin){
+        const doc = await docRef.get();
+
+        if(!doc.exists || doc.data().approved !== true){
+          await auth.signOut();
+          screenAuthEl.classList.remove('hidden');
+          screenSetupEl.classList.add('hidden');
+          screenExamEl.classList.add('hidden');
+          screenFeedbackEl.classList.add('hidden');
+          btnLogoutEl.style.display = 'none';
+          authNote.style.color = 'var(--stamp-red)';
+          authNote.textContent = authErrorMessage({code:'app/not-approved'});
+          return;
+        }
+
+        // If no device has claimed this account yet on this load, claim it now
+        if(doc.data().activeSession !== deviceSessionId){
+          await docRef.update({ activeSession: deviceSessionId });
+        }
+
+        // Watch for another device taking over this account
+        sessionWatcherUnsub = docRef.onSnapshot(snap => {
+          const data = snap.data();
+          if(data && data.activeSession && data.activeSession !== deviceSessionId){
+            auth.signOut().then(() => {
+              authNote.style.color = 'var(--stamp-red)';
+              authNote.textContent = 'Du wurdest abgemeldet, weil dieses Konto auf einem anderen Gerät verwendet wird.';
+            });
+          }
+        });
+      }
+
       screenAuthEl.classList.add('hidden');
       screenSetupEl.classList.remove('hidden');
       btnLogoutEl.style.display = 'inline-block';
