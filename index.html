@@ -274,6 +274,19 @@
   .correction .said{ color:var(--stamp-red-deep); text-decoration:line-through; opacity:0.75; }
   .correction .better{ color:var(--green-ok); font-weight:600; }
 
+  .score-banner.fail{ border-color:var(--stamp-red); color:var(--stamp-red); }
+  .score-total{ font-size:20px; letter-spacing:0.02em; display:block; margin-bottom:4px; }
+  .score-verdict{ font-size:12px; }
+  .criteria-table{ margin-bottom:20px; }
+  .criterion-row{ margin-bottom:12px; }
+  .criterion-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .criterion-name{ font-size:14px; font-weight:600; }
+  .criterion-pts{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); white-space:nowrap; }
+  .criterion-bar{ height:6px; background:var(--paper-deep); border:1px solid var(--line); }
+  .criterion-bar-fill{ height:100%; background:var(--green-ok); }
+  .criterion-bar-fill.low{ background:var(--stamp-red); }
+  .criterion-comment{ font-size:13px; color:var(--ink-soft); margin:4px 0 0; line-height:1.5; }
+
   .hidden{ display:none !important; }
   .small-note{ font-size:12px; color:var(--ink-soft); margin-top:10px; }
 
@@ -435,13 +448,29 @@ const TASKS = {
   }
 };
 
-const FEEDBACK_SYSTEM = `Du bist ein erfahrener ÖSD-B2-Prüfer und Deutschlehrer. Du bekommst das Transkript eines Übungsgesprächs zur mündlichen B2-Prüfung (Teil "Sprechen") sowie die Aufgabenart. Bewerte NUR die Beiträge der lernenden Person (Rolle "user"), nicht die des Gesprächspartners.
+const FEEDBACK_SYSTEM = `Du bist ein erfahrener, offizieller ÖSD-B2-Prüfer und bewertest gerade wie in der echten mündlichen Prüfung (Teil "Sprechen"). Du bekommst das Transkript eines Übungsgesprächs sowie die Aufgabenart. Bewerte NUR die Beiträge der lernenden Person (Rolle "user"), nicht die des Gesprächspartners.
 
-Bewertungskriterien (wie in der echten ÖSD-B2-Prüfung): Aufgabenbewältigung/Inhalt, sprachliche Mittel (Wortschatz, Grammatik), Aussprache/Flüssigkeit (so gut wie aus dem Transkript erkennbar), Interaktion/Kommunikationsfähigkeit.
+Bewerte streng wie ein echter Prüfer nach genau diesen 5 Kriterien, jeweils mit 0 bis 5 Punkten (0 = ungenügend, 3 = B2 knapp erfüllt, 5 = sehr souverän):
+1. Aufgabenbewältigung & Inhalt — Wurde die Aufgabe vollständig erfüllt, war der Inhalt relevant und ausreichend entwickelt?
+2. Wortschatz & Ausdruck — Wortschatzbreite, Idiomatik, Treffsicherheit der Wortwahl.
+3. Grammatik — Korrektheit von Satzbau, Morphologie, Wortstellung.
+4. Aussprache & Flüssigkeit — soweit aus dem Transkript erkennbar (Satzlänge, Abbrüche, Füllwörter, Flüssigkeit des Ausdrucks).
+5. Interaktion & Kommunikationsstrategie — Reagiert die Person angemessen auf den Gesprächspartner, stellt Rückfragen, hält das Gespräch im Fluss?
+
+Sei ehrlich und konsequent streng, vergib nicht automatisch hohe Punkte. Die Gesamtpunktzahl ist die Summe der 5 Kriterien (max. 25). Die Prüfung gilt als "bestanden", wenn die Gesamtpunktzahl mindestens 15 von 25 beträgt (60%).
 
 Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (keine Markdown-Codeblöcke, kein Vorspann), exakt in diesem Format:
 {
-  "geschaetzte_note": "kurzer Text, z.B. 'gut (B2 erreicht)' oder 'knapp B2' oder 'noch nicht B2, eher B1+'",
+  "kriterien": [
+    {"name": "Aufgabenbewältigung & Inhalt", "punkte": 0, "kommentar": "kurze Begründung, 1 Satz"},
+    {"name": "Wortschatz & Ausdruck", "punkte": 0, "kommentar": "kurze Begründung, 1 Satz"},
+    {"name": "Grammatik", "punkte": 0, "kommentar": "kurze Begründung, 1 Satz"},
+    {"name": "Aussprache & Flüssigkeit", "punkte": 0, "kommentar": "kurze Begründung, 1 Satz"},
+    {"name": "Interaktion & Kommunikation", "punkte": 0, "kommentar": "kurze Begründung, 1 Satz"}
+  ],
+  "gesamtpunkte": 0,
+  "bestanden": false,
+  "geschaetzte_note": "kurzer Text, z.B. 'gut bestanden (B2 erreicht)' oder 'knapp bestanden' oder 'nicht bestanden, eher B1+'",
   "staerken": ["string", "string"],
   "verbesserungen": ["string", "string", "string"],
   "korrekturen": [
@@ -449,7 +478,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (keine Markdown-Codeblöcke, kein
   ],
   "naechste_schritte": "ein konkreter, ermutigender Tipp für die nächste Übung, 1-2 Sätze"
 }
-Gib maximal 3 Stärken, maximal 5 Verbesserungspunkte und maximal 5 Korrekturen an. Sei konkret, ehrlich, aber ermutigend. Schreibe alles auf Deutsch.`;
+Gib maximal 3 Stärken, maximal 5 Verbesserungspunkte und alle relevanten Korrekturen (auch mehr als 5, wenn nötig — finde wirklich JEDEN Satzbau- oder Wortwahlfehler aus den "user"-Beiträgen). Achte besonders genau auf Korrekturen: gehe Satz für Satz durch die Beiträge der lernenden Person und liste jeden Fehler bei Satzstellung, Kasus, Präposition, Wortwahl, Zeitform etc. einzeln auf. Sei konkret, ehrlich, fair aber streng wie in der echten Prüfung. Schreibe alles auf Deutsch. gesamtpunkte muss exakt der Summe der 5 "punkte"-Werte entsprechen, und bestanden muss exakt gesamtpunkte >= 15 widerspiegeln.`;
 
 if(/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone){
   document.getElementById('install-hint').style.display = 'block';
@@ -1064,6 +1093,7 @@ btnEndTask.addEventListener('click', () => {
 async function goToFeedback(){
   screenExam.classList.add('hidden');
   screenFeedback.classList.remove('hidden');
+  scoreBanner.classList.remove('fail');
   scoreBanner.textContent = 'Auswertung wird erstellt …';
   feedbackBody.innerHTML = '<p style="color:var(--ink-soft);font-family:var(--mono);font-size:13px;">Einen Moment, dein Gespräch wird analysiert …</p>';
 
@@ -1092,9 +1122,32 @@ async function goToFeedback(){
 }
 
 function renderFeedback(fb){
-  scoreBanner.textContent = 'Einschätzung: ' + fb.geschaetzte_note;
+  const total = (typeof fb.gesamtpunkte === 'number') ? fb.gesamtpunkte
+    : (fb.kriterien || []).reduce((sum, k) => sum + (Number(k.punkte) || 0), 0);
+  const passed = (typeof fb.bestanden === 'boolean') ? fb.bestanden : (total >= 15);
+
+  scoreBanner.classList.toggle('fail', !passed);
+  scoreBanner.innerHTML = `<span class="score-total">${total} / 25 Punkte — ${passed ? 'BESTANDEN' : 'NICHT BESTANDEN'}</span><span class="score-verdict">${escapeHtml(fb.geschaetzte_note || '')}</span>`;
 
   let html = '';
+
+  if(fb.kriterien && fb.kriterien.length){
+    html += `<div class="fb-block criteria-table"><h4>Bewertung nach Kriterien</h4>` +
+      fb.kriterien.map(k => {
+        const pts = Number(k.punkte) || 0;
+        const pct = Math.max(0, Math.min(100, (pts/5)*100));
+        return `<div class="criterion-row">
+          <div class="criterion-top">
+            <span class="criterion-name">${escapeHtml(k.name || '')}</span>
+            <span class="criterion-pts">${pts} / 5</span>
+          </div>
+          <div class="criterion-bar"><div class="criterion-bar-fill${pts < 3 ? ' low' : ''}" style="width:${pct}%;"></div></div>
+          ${k.kommentar ? `<p class="criterion-comment">${escapeHtml(k.kommentar)}</p>` : ''}
+        </div>`;
+      }).join('') +
+      `</div>`;
+  }
+
   if(fb.staerken && fb.staerken.length){
     html += `<div class="fb-block"><h4>Stärken</h4><ul>${fb.staerken.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
   }
