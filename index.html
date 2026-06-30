@@ -273,6 +273,9 @@
   }
   .correction .said{ color:var(--stamp-red-deep); text-decoration:line-through; opacity:0.75; }
   .correction .better{ color:var(--green-ok); font-weight:600; }
+  .correction-explain{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.5; }
+  .bubble.correction-bubble .who{ color:var(--gold); }
+  .bubble.correction-bubble .txt{ font-size:14px; }
 
   .score-banner.fail{ border-color:var(--stamp-red); color:var(--stamp-red); }
   .score-total{ font-size:20px; letter-spacing:0.02em; display:block; margin-bottom:4px; }
@@ -778,7 +781,17 @@ btnStart.addEventListener('click', async () => {
   }catch(e){
     console.error('getUserMedia failed', e);
     micPermNote.style.color = 'var(--stamp-red)';
-    micPermNote.textContent = 'Mikrofonzugriff wird benötigt, um die Sprechübung zu starten. Fehler: ' + (e.message || e.name) + '. Bitte erlauben und nochmal versuchen.';
+    let hint;
+    if(e.name === 'NotFoundError' || e.name === 'OverconstrainedError'){
+      hint = 'Es wurde kein Mikrofon gefunden. Prüfe unter Windows: Einstellungen → System → Sound → Eingabe, ob ein Mikrofon angeschlossen/aktiviert ist, und unter Einstellungen → Datenschutz → Mikrofon, ob der Zugriff erlaubt ist.';
+    } else if(e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError'){
+      hint = 'Der Mikrofonzugriff wurde blockiert. Klicke auf das Schloss-/Kamera-Symbol links neben der Adresszeile und erlaube das Mikrofon für diese Seite, dann lade die Seite neu.';
+    } else if(e.name === 'NotReadableError'){
+      hint = 'Das Mikrofon wird gerade von einer anderen App benutzt. Schließe andere Programme (z. B. Zoom, Teams, OBS) und versuche es erneut.';
+    } else {
+      hint = 'Bitte erlauben und nochmal versuchen.';
+    }
+    micPermNote.textContent = 'Mikrofonzugriff wird benötigt, um die Sprechübung zu starten. (' + (e.name || e.message) + ') ' + hint;
     return;
   }
   try{
@@ -1004,6 +1017,21 @@ function addBubble(role, text){
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
+function addCorrectionBubble(korrektur){
+  if(!korrektur || !korrektur.gesagt || !korrektur.besser) return;
+  const div = document.createElement('div');
+  div.className = 'bubble correction-bubble';
+  div.innerHTML = `<div class="who">Korrektur</div><div class="txt">
+    <div class="correction">
+      <span class="said">${escapeHtml(korrektur.gesagt)}</span><br>
+      <span class="better">→ ${escapeHtml(korrektur.besser)}</span>
+      ${korrektur.erklaerung ? `<div class="correction-explain">${escapeHtml(korrektur.erklaerung)}</div>` : ''}
+    </div>
+  </div>`;
+  transcriptEl.appendChild(div);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
 function handleUserUtterance(text){
   removeInterimBubble();
   addBubble('user', text);
@@ -1015,10 +1043,40 @@ function handleUserUtterance(text){
   callPartnerAPI(false);
 }
 
+const TURN_FORMAT_INSTRUCTIONS = `
+
+ZUSÄTZLICHE FORMAT-REGELN FÜR DIESEN DIALOG (sehr wichtig, immer befolgen):
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, keine Codeblöcke, kein Vorspann), exakt in diesem Format:
+{"antwort": "...", "korrektur": null}
+
+- "antwort": deine eigentliche Gesprächsantwort GENAU nach der oben beschriebenen Rolle (Länge, Sprachregister, Inhalt, Sie/Du-Form). Baue hier NIEMALS Korrekturen, Erklärungen oder Meta-Kommentare ein — nur die reine, natürliche Gesprächsantwort, wie ein echter Mensch sie sagen würde.
+- "korrektur": Wenn die letzte Äußerung der lernenden Person (nicht bei der Gesprächseröffnung) einen klaren Grammatik-, Kasus-, Präpositions- oder Wortwahlfehler enthielt, fülle dieses Feld mit einem Objekt:
+  {"gesagt": "der fehlerhafte Teil, kurz und nah am Original zitiert", "besser": "die korrekte Version desselben Teils", "erklaerung": "kurze, klare Erklärung der Grammatikregel auf Deutsch (z.B. welcher Kasus, welches Genus, warum)"}
+  Korrigiere maximal EINEN, den wichtigsten Fehler pro Antwort (nicht mehrere auf einmal). War die Äußerung fehlerfrei, oder ist es die Eröffnung, setze "korrektur" auf null. Erfinde niemals einen Fehler, der nicht da ist.
+
+Achte außerdem auf einen NATÜRLICHEN GESPRÄCHSABLAUF wie in einer echten Prüfung: Wenn unten eine Resttzeit angegeben ist und diese unter 45 Sekunden liegt, ODER wenn alle inhaltlichen Pflichtteile der Aufgabe bereits abgedeckt wurden, leite deine "antwort" jetzt natürlich zu einem Abschluss über (kurz zusammenfassen, sich bedanken, sich verabschieden — z.B. "Das war ein schönes Gespräch, vielen Dank und alles Gute!"), anstatt das Gespräch abrupt oder kommentarlos abzubrechen. Beende das Gespräch nicht zu früh, wenn noch genug Zeit und Inhalt übrig ist.`;
+
+function parsePartnerReply(textBlocks){
+  const fallback = { antwort: (textBlocks || '').trim() || 'Entschuldigung, kannst du das bitte wiederholen?', korrektur: null };
+  if(!textBlocks) return fallback;
+  const match = textBlocks.match(/\{[\s\S]*\}/);
+  const clean = (match ? match[0] : textBlocks).replace(/```json|```/g, '').trim();
+  try{
+    const obj = JSON.parse(clean);
+    if(obj && typeof obj.antwort === 'string' && obj.antwort.trim()){
+      const k = obj.korrektur;
+      const korrektur = (k && typeof k === 'object' && k.gesagt && k.besser) ? k : null;
+      return { antwort: obj.antwort.trim(), korrektur };
+    }
+  }catch(e){ /* fall through to plain-text fallback */ }
+  return fallback;
+}
+
 async function callPartnerAPI(isOpening){
   try{
     const task = TASKS[selectedTask];
-    const sys = task.systemPrompt(selectedTopic);
+    const sys = task.systemPrompt(selectedTopic) + TURN_FORMAT_INSTRUCTIONS +
+      `\n\nResttzeit in diesem Gespräch: ca. ${Math.max(secondsLeft,0)} Sekunden (von insgesamt ${task.talkSeconds} Sekunden).`;
     const historyForApi = conversation.map(turn => ({
       role: turn.role === 'user' ? 'user' : 'assistant',
       content: turn.text
@@ -1032,16 +1090,19 @@ async function callPartnerAPI(isOpening){
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
         model: "openai",
+        max_tokens: 600,
         messages: messages
       })
     });
     const data = await response.json();
-    const partnerText = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim()
-      || 'Entschuldigung, kannst du das bitte wiederholen?';
+    const rawText = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
+    const parsed = parsePartnerReply(rawText);
+    const partnerText = parsed.antwort;
 
     conversation.push({role:'partner', text: partnerText});
     lastPartnerUtterance = partnerText;
     addBubble('partner', partnerText);
+    if(parsed.korrektur) addCorrectionBubble(parsed.korrektur);
     speakText(partnerText);
   }catch(e){
     console.error(e);
@@ -1100,17 +1161,35 @@ async function fetchFeedbackOnce(userMsg){
       messages: [{role:'system', content: FEEDBACK_SYSTEM}, {role:'user', content: userMsg}]
     })
   });
+  const rawBody = await response.text();
   if(!response.ok){
-    throw new Error('HTTP ' + response.status);
+    const err = new Error('HTTP ' + response.status);
+    err.rawBody = rawBody;
+    throw err;
   }
-  const data = await response.json();
+  let data;
+  try{
+    data = JSON.parse(rawBody);
+  }catch(e){
+    const err = new Error('Antwort ist kein gültiges JSON (HTTP-Ebene)');
+    err.rawBody = rawBody;
+    throw err;
+  }
   const textBlocks = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
   if(!textBlocks){
-    throw new Error('Leere Antwort vom Server: ' + JSON.stringify(data).slice(0,200));
+    const err = new Error('Leere Antwort vom Server');
+    err.rawBody = rawBody;
+    throw err;
   }
   const match = textBlocks.match(/\{[\s\S]*\}/);
   const clean = (match ? match[0] : textBlocks).replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+  try{
+    return JSON.parse(clean);
+  }catch(e){
+    const err = new Error('Konnte Bewertungs-JSON nicht parsen');
+    err.rawBody = textBlocks;
+    throw err;
+  }
 }
 
 async function goToFeedback(){
@@ -1135,7 +1214,9 @@ async function goToFeedback(){
     }
   }
   scoreBanner.textContent = 'Auswertung nicht verfügbar';
+  const debugRaw = (lastError && lastError.rawBody) ? lastError.rawBody.slice(0, 1500) : '';
   feedbackBody.innerHTML = `<p>Es gab einen Fehler bei der Auswertung (${escapeHtml((lastError && lastError.message) || 'unbekannter Fehler')}). Du kannst die Aufgabe einfach nochmal versuchen.</p>
+    ${debugRaw ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--ink-soft);">Technische Details (zum Debuggen)</summary><pre style="white-space:pre-wrap;font-size:11px;color:var(--ink-soft);border:1px solid var(--line);padding:10px;margin-top:8px;max-height:300px;overflow:auto;">${escapeHtml(debugRaw)}</pre></details>` : ''}
     <div class="btn-row"><button class="btn ghost" id="btn-feedback-retry">Auswertung erneut anfordern</button></div>`;
   const retryBtn = document.getElementById('btn-feedback-retry');
   if(retryBtn) retryBtn.addEventListener('click', goToFeedback);
