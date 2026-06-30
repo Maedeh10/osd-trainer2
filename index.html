@@ -134,6 +134,7 @@
     color:var(--ink);
   }
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  #image-upload-preview img{ max-width:220px; max-height:220px; border:1px solid var(--line); display:block; }
 
   .btn{
     font-family:var(--mono);
@@ -343,6 +344,12 @@
       <input type="text" id="custom-topic" placeholder="z. B. „Homeoffice ja oder nein“">
     </div>
 
+    <div class="field" id="image-upload-field" style="display:none;">
+      <label for="image-upload">Eigenes Prüfungsbild hochladen (Aufgabe 2)</label>
+      <input type="file" id="image-upload" accept="image/*">
+      <div id="image-upload-preview" style="margin-top:10px;"></div>
+    </div>
+
     <div class="btn-row">
       <button class="btn red" id="btn-start" disabled>Aufgabe wählen, um zu beginnen</button>
     </div>
@@ -451,6 +458,7 @@ if(/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone)
 // ---------------- State ----------------
 let selectedTask = null;
 let selectedTopic = null;
+let uploadedImageData = null;
 let prepTimer = null, talkTimer = null;
 let secondsLeft = 0;
 let conversation = []; // {role: 'user'|'partner', text}
@@ -470,6 +478,20 @@ const taskGrid = document.getElementById('task-grid');
 const topicSelect = document.getElementById('topic-select');
 const voiceSelect = document.getElementById('voice-select');
 const customTopicInput = document.getElementById('custom-topic');
+const imageUploadField = document.getElementById('image-upload-field');
+const imageUploadInput = document.getElementById('image-upload');
+const imageUploadPreview = document.getElementById('image-upload-preview');
+
+imageUploadInput.addEventListener('change', () => {
+  const file = imageUploadInput.files && imageUploadInput.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    uploadedImageData = reader.result;
+    imageUploadPreview.innerHTML = `<img src="${uploadedImageData}" alt="Hochgeladenes Prüfungsbild">`;
+  };
+  reader.readAsDataURL(file);
+});
 const dictationRow = document.getElementById('dictation-row');
 const dictationInput = document.getElementById('dictation-input');
 const btnDictationSend = document.getElementById('btn-dictation-send');
@@ -501,6 +523,7 @@ function selectTask(taskKey){
   populateTopics();
   btnStart.disabled = false;
   btnStart.textContent = 'Prüfung simulieren →';
+  imageUploadField.style.display = (taskKey === 'bild') ? 'block' : 'none';
 }
 
 taskGrid.addEventListener('click', (e) => {
@@ -780,8 +803,11 @@ function renderBrief(){
         <li>Tauscht eure Erfahrungen und Ansichten aus und gebt euch gegenseitig Tipps.</li>
       </ul>`;
   } else if(selectedTask === 'bild'){
+    const imgHtml = uploadedImageData
+      ? `<img src="${uploadedImageData}" alt="Prüfungsbild" style="width:100%;border:1px solid var(--line);background:#fff;">`
+      : placeholderImageSVG(selectedTopic);
     briefEl.innerHTML = `<h4>Aufgabe 2 · Bildbeschreibung &amp; Interpretation</h4>
-      <div class="img-wrap">${placeholderImageSVG(selectedTopic)}</div>
+      <div class="img-wrap">${imgHtml}</div>
       <div class="img-text">
         <p>Stell dir vor, du hast bei der Prüfung drei Bilder vorgelegt bekommen und dich für eines entschieden. Das Bild zeigt: <strong>„${selectedTopic}“</strong>.</p>
         <ul>
