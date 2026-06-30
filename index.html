@@ -370,6 +370,7 @@
           <line x1="8" y1="23" x2="16" y2="23"></line>
         </svg>
       </button>
+      <button class="btn red" id="btn-stop-send" style="display:none;">Fertig &amp; senden</button>
     </div>
     <div id="dictation-row" class="dictation-row hidden">
       <textarea id="dictation-input" rows="3" placeholder="Tippe auf das Mikrofon-Symbol auf deiner iPhone-Tastatur, um per Sprache zu diktieren — oder tippe hier direkt."></textarea>
@@ -413,7 +414,7 @@ const TASKS = {
   },
   bild: {
     label: "Bildbeschreibung",
-    topics: ["Arbeit im Homeoffice", "Familie beim gemeinsamen Essen", "Junge Menschen mit Smartphones in der Öffentlichkeit", "Senioren beim Sport", "Eine Grossstadt-Strasse mit Verkehr und Radfahrern", "Menschen beim Einkaufen in einem Supermarkt"],
+    topics: ["Arbeit im Homeoffice", "Familie beim gemeinsamen Essen", "Junge Menschen mit Smartphones in der Öffentlichkeit", "Senioren beim Sport", "Eine Grossstadt-Strasse mit Verkehr und Radfahrern", "Menschen beim Einkaufen in einem Supermarkt", "Menschen in einem Café oder Restaurant", "Joggen oder Sport im Park"],
     prepSeconds: 5*60,
     talkSeconds: 5*60,
     systemPrompt: (topic) => `Du spielst die Rolle des Prüfers/der Prüferin in der mündlichen ÖSD-B2-Prüfung, Aufgabe "Bildbeschreibung und Interpretation". Der/die Lernende beschreibt gerade ein Bild zum Thema "${topic}" (du siehst das Bild nicht selbst, aber gehe davon aus, dass es ein typisches, realistisches Alltagsfoto zu diesem Thema zeigt). Deine Rolle: Höre der Beschreibung zu, stelle nach der Beschreibung gezielte Rückfragen zur Interpretation (Was denkst du über...? Wie siehst du das? Kennst du das auch aus deinem Leben? Bist du anderer Meinung?), fordere Begründungen ein, und reagiere kurz inhaltlich auf das Gesagte. Sprich klares, natürliches B2-Standarddeutsch, Sie-Form, in kurzen Prüfer-Turns (1-2 Sätze pro Beitrag), nicht wie ein Vortrag. Beginne jetzt, indem du den/die Lernende bittest, das gewählte Bild zu beschreiben und zu sagen, warum er/sie es gewählt hat.`
@@ -484,6 +485,7 @@ const micHint = document.getElementById('mic-hint');
 const btnSkipPrep = document.getElementById('btn-skip-prep');
 const btnEndTask = document.getElementById('btn-end-task');
 const btnReplay = document.getElementById('btn-replay');
+const btnStopSend = document.getElementById('btn-stop-send');
 
 const scoreBanner = document.getElementById('score-banner');
 const feedbackBody = document.getElementById('feedback-body');
@@ -592,7 +594,7 @@ function setupRecognition(){
   recognition = new SpeechRecognition();
   recognition.lang = 'de-DE';
   recognition.interimResults = true;
-  recognition.continuous = false;
+  recognition.continuous = true;
   recognition.maxAlternatives = 1;
 
   let finalText = '';
@@ -600,7 +602,8 @@ function setupRecognition(){
   recognition.onstart = () => {
     isListening = true;
     micBtn.classList.add('listening');
-    micHint.textContent = 'Ich höre zu … (Mikrofon antippen, um zu beenden)';
+    micHint.textContent = 'Ich höre zu … Tippe „Fertig & senden“, wenn du fertig bist.';
+    btnStopSend.style.display = 'inline-block';
   };
 
   recognition.onresult = (event) => {
@@ -617,6 +620,7 @@ function setupRecognition(){
   recognition.onerror = (event) => {
     isListening = false;
     micBtn.classList.remove('listening');
+    btnStopSend.style.display = 'none';
     if(event.error === 'no-speech'){
       micHint.textContent = 'Nichts gehört. Versuch es noch einmal.';
     } else if(event.error === 'not-allowed' || event.error === 'permission-denied'){
@@ -630,6 +634,7 @@ function setupRecognition(){
   recognition.onend = () => {
     isListening = false;
     micBtn.classList.remove('listening');
+    btnStopSend.style.display = 'none';
     removeInterimBubble();
     if(finalText && finalText.trim().length > 0){
       handleUserUtterance(finalText.trim());
@@ -688,6 +693,10 @@ micBtn.addEventListener('click', () => {
     if(speechSynthesis.speaking) speechSynthesis.cancel();
     try{ recognition.start(); }catch(e){ /* already started */ }
   }
+});
+
+btnStopSend.addEventListener('click', () => {
+  if(isListening) recognition.stop();
 });
 
 // ---------------- Start exam ----------------
@@ -793,17 +802,111 @@ function renderBrief(){
 }
 
 function placeholderImageSVG(topic){
-  // simple, abstract, neutral illustrative sketch — not a real photo, just a visual cue for the topic card
-  return `<svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+  // Distinct, simple line-art illustrations for the most common ÖSD B2 "Bildbeschreibung" topics.
+  // Not real photos — just enough of a visual cue to describe and interpret, like in the real exam.
+  const frame = (inner) => `<svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
     <rect width="200" height="140" fill="#EFE9DA"/>
     <rect x="6" y="6" width="188" height="128" fill="none" stroke="#C9BFA4"/>
+    ${inner}
+    <text x="100" y="132" font-family="Courier New" font-size="9" fill="#8a8266" text-anchor="middle">SYMBOLBILD</text>
+  </svg>`;
+
+  const images = {
+    "Arbeit im Homeoffice": frame(`
+      <rect x="40" y="70" width="90" height="6" fill="#B08A3E"/>
+      <rect x="50" y="76" width="70" height="34" fill="#E2D6B8"/>
+      <rect x="60" y="48" width="50" height="32" fill="#fff" stroke="#8a8266"/>
+      <rect x="64" y="52" width="42" height="22" fill="#D8CBA8"/>
+      <circle cx="150" cy="90" r="14" fill="#D8CBA8"/>
+      <rect x="138" y="104" width="24" height="20" fill="#D8CBA8"/>
+      <circle cx="30" cy="100" r="10" fill="#3F6B4A" opacity="0.5"/>
+      <line x1="30" y1="100" x2="30" y2="118" stroke="#3F6B4A" stroke-width="2"/>
+    `),
+    "Familie beim gemeinsamen Essen": frame(`
+      <ellipse cx="100" cy="95" rx="70" ry="20" fill="#E2D6B8"/>
+      <circle cx="60" cy="62" r="13" fill="#D8CBA8"/>
+      <rect x="48" y="75" width="24" height="22" fill="#D8CBA8"/>
+      <circle cx="100" cy="55" r="13" fill="#D8CBA8"/>
+      <rect x="88" y="68" width="24" height="26" fill="#D8CBA8"/>
+      <circle cx="140" cy="62" r="13" fill="#D8CBA8"/>
+      <rect x="128" y="75" width="24" height="22" fill="#D8CBA8"/>
+      <circle cx="80" cy="92" r="5" fill="#fff" stroke="#B08A3E"/>
+      <circle cx="120" cy="92" r="5" fill="#fff" stroke="#B08A3E"/>
+    `),
+    "Junge Menschen mit Smartphones in der Öffentlichkeit": frame(`
+      <circle cx="60" cy="50" r="12" fill="#D8CBA8"/>
+      <rect x="48" y="62" width="24" height="40" fill="#D8CBA8"/>
+      <rect x="55" y="78" width="10" height="16" fill="#3F6B4A" opacity="0.7"/>
+      <circle cx="130" cy="46" r="12" fill="#D8CBA8"/>
+      <rect x="118" y="58" width="24" height="42" fill="#D8CBA8"/>
+      <rect x="125" y="72" width="10" height="16" fill="#A8312F" opacity="0.6"/>
+      <line x1="20" y1="118" x2="180" y2="118" stroke="#B08A3E" stroke-width="2"/>
+    `),
+    "Senioren beim Sport": frame(`
+      <circle cx="55" cy="55" r="12" fill="#D8CBA8"/>
+      <rect x="45" y="67" width="20" height="30" fill="#D8CBA8"/>
+      <line x1="45" y1="97" x2="35" y2="118" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="65" y1="97" x2="75" y2="118" stroke="#D8CBA8" stroke-width="6"/>
+      <circle cx="135" cy="60" r="12" fill="#D8CBA8"/>
+      <rect x="125" y="72" width="20" height="28" fill="#D8CBA8"/>
+      <line x1="125" y1="100" x2="115" y2="118" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="145" y1="100" x2="155" y2="118" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="20" y1="118" x2="180" y2="118" stroke="#3F6B4A" stroke-width="2"/>
+    `),
+    "Eine Grossstadt-Strasse mit Verkehr und Radfahrern": frame(`
+      <rect x="0" y="20" width="60" height="60" fill="#E2D6B8"/>
+      <rect x="70" y="10" width="50" height="70" fill="#D8CBA8"/>
+      <rect x="130" y="30" width="55" height="50" fill="#E2D6B8"/>
+      <rect x="0" y="100" width="200" height="14" fill="#8a8266"/>
+      <rect x="40" y="104" width="30" height="4" fill="#fff"/>
+      <rect x="90" y="104" width="30" height="4" fill="#fff"/>
+      <rect x="140" y="104" width="30" height="4" fill="#fff"/>
+      <rect x="20" y="92" width="22" height="10" rx="2" fill="#A8312F"/>
+      <circle cx="26" cy="103" r="3" fill="#232017"/>
+      <circle cx="38" cy="103" r="3" fill="#232017"/>
+      <circle cx="120" cy="98" r="6" fill="none" stroke="#3F6B4A" stroke-width="2"/>
+      <circle cx="140" cy="98" r="6" fill="none" stroke="#3F6B4A" stroke-width="2"/>
+      <line x1="120" y1="98" x2="130" y2="86" stroke="#3F6B4A" stroke-width="2"/>
+      <line x1="130" y1="86" x2="140" y2="98" stroke="#3F6B4A" stroke-width="2"/>
+    `),
+    "Menschen beim Einkaufen in einem Supermarkt": frame(`
+      <rect x="20" y="30" width="160" height="14" fill="#D8CBA8"/>
+      <rect x="20" y="55" width="160" height="14" fill="#D8CBA8"/>
+      <rect x="20" y="80" width="160" height="14" fill="#D8CBA8"/>
+      <circle cx="60" cy="115" r="9" fill="#D8CBA8"/>
+      <rect x="50" y="118" width="20" height="10" fill="none" stroke="#B08A3E" stroke-width="2"/>
+      <line x1="50" y1="123" x2="40" y2="123" stroke="#B08A3E" stroke-width="2"/>
+    `),
+    "Menschen in einem Café oder Restaurant": frame(`
+      <rect x="55" y="80" width="90" height="6" fill="#B08A3E"/>
+      <rect x="60" y="86" width="80" height="3" fill="#8a8266"/>
+      <circle cx="80" cy="55" r="12" fill="#D8CBA8"/>
+      <rect x="70" y="67" width="20" height="14" fill="#D8CBA8"/>
+      <circle cx="125" cy="58" r="12" fill="#D8CBA8"/>
+      <rect x="115" y="70" width="20" height="11" fill="#D8CBA8"/>
+      <ellipse cx="80" cy="84" rx="8" ry="3" fill="#fff" stroke="#B08A3E"/>
+      <ellipse cx="120" cy="84" rx="8" ry="3" fill="#fff" stroke="#B08A3E"/>
+      <rect x="98" y="78" width="6" height="10" fill="#A8312F" opacity="0.6"/>
+    `),
+    "Joggen oder Sport im Park": frame(`
+      <ellipse cx="160" cy="60" rx="22" ry="22" fill="#3F6B4A" opacity="0.25"/>
+      <circle cx="60" cy="55" r="11" fill="#D8CBA8"/>
+      <line x1="60" y1="66" x2="60" y2="92" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="60" y1="74" x2="44" y2="84" stroke="#D8CBA8" stroke-width="5"/>
+      <line x1="60" y1="74" x2="76" y2="64" stroke="#D8CBA8" stroke-width="5"/>
+      <line x1="60" y1="92" x2="46" y2="115" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="60" y1="92" x2="78" y2="108" stroke="#D8CBA8" stroke-width="6"/>
+      <line x1="10" y1="118" x2="190" y2="118" stroke="#B08A3E" stroke-width="2"/>
+    `)
+  };
+
+  return images[topic] || frame(`
     <circle cx="60" cy="55" r="18" fill="#D8CBA8"/>
     <rect x="35" y="78" width="50" height="40" fill="#D8CBA8"/>
     <rect x="110" y="40" width="60" height="78" fill="#E2D6B8"/>
     <line x1="110" y1="60" x2="170" y2="60" stroke="#B08A3E" stroke-width="2"/>
     <line x1="110" y1="80" x2="170" y2="80" stroke="#B08A3E" stroke-width="2"/>
-    <text x="100" y="132" font-family="Courier New" font-size="9" fill="#8a8266" text-anchor="middle">SYMBOLBILD</text>
-  </svg>`;
+  `);
 }
 
 function startTalkPhase(){
