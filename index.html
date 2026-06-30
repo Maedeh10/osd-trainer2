@@ -692,13 +692,20 @@ micBtn.addEventListener('click', () => {
 
 // ---------------- Start exam ----------------
 btnStart.addEventListener('click', async () => {
-  if(!selectedTask) return;
+  if(!selectedTask){
+    micPermNote.textContent = 'Bitte zuerst eine Aufgabe oben auswählen (Aufgabe 1, 2 oder 3 anklicken).';
+    return;
+  }
+  micPermNote.style.color = '';
+  micPermNote.textContent = 'Starte … bitte Mikrofonzugriff erlauben, falls gefragt.';
 
   if(!window.isSecureContext){
+    micPermNote.style.color = 'var(--stamp-red)';
     micPermNote.textContent = 'Mikrofonzugriff funktioniert nur über HTTPS oder localhost (nicht bei direktem Öffnen der Datei per Doppelklick). Bitte die Datei über einen lokalen Server öffnen oder online hosten.';
     return;
   }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    micPermNote.style.color = 'var(--stamp-red)';
     micPermNote.textContent = 'Dieser Browser unterstützt keinen Mikrofonzugriff (navigator.mediaDevices fehlt). Bitte aktuelles Chrome oder Edge auf dem Desktop verwenden.';
     return;
   }
@@ -709,13 +716,20 @@ btnStart.addEventListener('click', async () => {
     stream.getTracks().forEach(t => t.stop());
   }catch(e){
     console.error('getUserMedia failed', e);
+    micPermNote.style.color = 'var(--stamp-red)';
     micPermNote.textContent = 'Mikrofonzugriff wird benötigt, um die Sprechübung zu starten. Fehler: ' + (e.message || e.name) + '. Bitte erlauben und nochmal versuchen.';
     return;
   }
-  const task = TASKS[selectedTask];
-  selectedTopic = customTopicInput.value.trim() || topicSelect.value || task.topics[Math.floor(Math.random()*task.topics.length)];
-  conversation = [];
-  startPrepPhase();
+  try{
+    const task = TASKS[selectedTask];
+    selectedTopic = customTopicInput.value.trim() || topicSelect.value || task.topics[Math.floor(Math.random()*task.topics.length)];
+    conversation = [];
+    startPrepPhase();
+  }catch(e){
+    console.error('startPrepPhase failed', e);
+    micPermNote.style.color = 'var(--stamp-red)';
+    micPermNote.textContent = 'Unerwarteter Fehler beim Starten: ' + e.message;
+  }
 });
 
 function startPrepPhase(){
@@ -852,22 +866,20 @@ async function callPartnerAPI(isOpening){
       content: turn.text
     }));
     const messages = isOpening
-      ? [{role:'user', content:'(Die Prüfung beginnt jetzt. Eröffne das Gespräch wie in deiner Rollenbeschreibung.)'}]
-      : historyForApi;
+      ? [{role:'system', content: sys}, {role:'user', content:'(Die Prüfung beginnt jetzt. Eröffne das Gespräch wie in deiner Rollenbeschreibung.)'}]
+      : [{role:'system', content: sys}, ...historyForApi];
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://text.pollinations.ai/openai", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 300,
-        system: sys,
+        model: "openai",
         messages: messages
       })
     });
     const data = await response.json();
-    const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
-    const partnerText = textBlocks.join('\n').trim() || 'Entschuldigung, kannst du das bitte wiederholen?';
+    const partnerText = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim()
+      || 'Entschuldigung, kannst du das bitte wiederholen?';
 
     conversation.push({role:'partner', text: partnerText});
     lastPartnerUtterance = partnerText;
@@ -930,18 +942,16 @@ async function goToFeedback(){
   const userMsg = `Aufgabe: ${TASKS[selectedTask].label}\nThema: ${selectedTopic}\n\nTranskript:\n${transcriptText}`;
 
   try{
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://text.pollinations.ai/openai", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        system: FEEDBACK_SYSTEM,
-        messages: [{role:'user', content: userMsg}]
+        model: "openai",
+        messages: [{role:'system', content: FEEDBACK_SYSTEM}, {role:'user', content: userMsg}]
       })
     });
     const data = await response.json();
-    const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    const textBlocks = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
     const clean = textBlocks.replace(/```json|```/g, '').trim();
     const fb = JSON.parse(clean);
     renderFeedback(fb);
