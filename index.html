@@ -478,7 +478,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (keine Markdown-Codeblöcke, kein
   ],
   "naechste_schritte": "ein konkreter, ermutigender Tipp für die nächste Übung, 1-2 Sätze"
 }
-Gib maximal 3 Stärken, maximal 5 Verbesserungspunkte und alle relevanten Korrekturen (auch mehr als 5, wenn nötig — finde wirklich JEDEN Satzbau- oder Wortwahlfehler aus den "user"-Beiträgen). Achte besonders genau auf Korrekturen: gehe Satz für Satz durch die Beiträge der lernenden Person und liste jeden Fehler bei Satzstellung, Kasus, Präposition, Wortwahl, Zeitform etc. einzeln auf. Sei konkret, ehrlich, fair aber streng wie in der echten Prüfung. Schreibe alles auf Deutsch. gesamtpunkte muss exakt der Summe der 5 "punkte"-Werte entsprechen, und bestanden muss exakt gesamtpunkte >= 15 widerspiegeln.`;
+Gib maximal 3 Stärken, maximal 5 Verbesserungspunkte und maximal 8 Korrekturen an (wähle die wichtigsten und gravierendsten Fehler aus, falls es mehr gibt). Achte besonders genau auf Korrekturen: gehe die Beiträge der lernenden Person durch und liste die wichtigsten Fehler bei Satzstellung, Kasus, Präposition, Wortwahl, Zeitform etc. einzeln auf — aber halte jeden Eintrag kurz. Sei konkret, ehrlich, fair aber streng wie in der echten Prüfung. Schreibe alles auf Deutsch. gesamtpunkte muss exakt der Summe der 5 "punkte"-Werte entsprechen, und bestanden muss exakt gesamtpunkte >= 15 widerspiegeln. WICHTIG: Antworte kurz und prägnant genug, dass die komplette JSON-Antwort niemals abgeschnitten wird.`;
 
 if(/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone){
   document.getElementById('install-hint').style.display = 'block';
@@ -1090,6 +1090,29 @@ btnEndTask.addEventListener('click', () => {
   goToFeedback();
 });
 
+async function fetchFeedbackOnce(userMsg){
+  const response = await fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      model: "openai",
+      max_tokens: 2200,
+      messages: [{role:'system', content: FEEDBACK_SYSTEM}, {role:'user', content: userMsg}]
+    })
+  });
+  if(!response.ok){
+    throw new Error('HTTP ' + response.status);
+  }
+  const data = await response.json();
+  const textBlocks = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  if(!textBlocks){
+    throw new Error('Leere Antwort vom Server: ' + JSON.stringify(data).slice(0,200));
+  }
+  const match = textBlocks.match(/\{[\s\S]*\}/);
+  const clean = (match ? match[0] : textBlocks).replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
 async function goToFeedback(){
   screenExam.classList.add('hidden');
   screenFeedback.classList.remove('hidden');
@@ -1100,25 +1123,22 @@ async function goToFeedback(){
   const transcriptText = conversation.map(t => `${t.role === 'user' ? 'TEILNEHMER:IN' : 'GESPRÄCHSPARTNER'}: ${t.text}`).join('\n');
   const userMsg = `Aufgabe: ${TASKS[selectedTask].label}\nThema: ${selectedTopic}\n\nTranskript:\n${transcriptText}`;
 
-  try{
-    const response = await fetch("https://text.pollinations.ai/openai", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model: "openai",
-        messages: [{role:'system', content: FEEDBACK_SYSTEM}, {role:'user', content: userMsg}]
-      })
-    });
-    const data = await response.json();
-    const textBlocks = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-    const clean = textBlocks.replace(/```json|```/g, '').trim();
-    const fb = JSON.parse(clean);
-    renderFeedback(fb);
-  }catch(e){
-    console.error(e);
-    scoreBanner.textContent = 'Auswertung nicht verfügbar';
-    feedbackBody.innerHTML = '<p>Es gab einen Fehler bei der Auswertung. Du kannst die Aufgabe einfach nochmal versuchen.</p>';
+  let lastError = null;
+  for(let attempt = 0; attempt < 3; attempt++){
+    try{
+      const fb = await fetchFeedbackOnce(userMsg);
+      renderFeedback(fb);
+      return;
+    }catch(e){
+      lastError = e;
+      console.error('Feedback-Versuch ' + (attempt+1) + ' fehlgeschlagen:', e);
+    }
   }
+  scoreBanner.textContent = 'Auswertung nicht verfügbar';
+  feedbackBody.innerHTML = `<p>Es gab einen Fehler bei der Auswertung (${escapeHtml((lastError && lastError.message) || 'unbekannter Fehler')}). Du kannst die Aufgabe einfach nochmal versuchen.</p>
+    <div class="btn-row"><button class="btn ghost" id="btn-feedback-retry">Auswertung erneut anfordern</button></div>`;
+  const retryBtn = document.getElementById('btn-feedback-retry');
+  if(retryBtn) retryBtn.addEventListener('click', goToFeedback);
 }
 
 function renderFeedback(fb){
